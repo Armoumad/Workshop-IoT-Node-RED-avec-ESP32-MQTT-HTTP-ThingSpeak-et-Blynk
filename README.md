@@ -173,8 +173,6 @@ void loop() {
 }
 ```
 
----
-
 ## Manipulation 1 : MQTT avec Node-RED
 
 ![MQTT](https://img.shields.io/badge/MQTT-660066?style=for-the-badge&logo=mqtt&logoColor=white)
@@ -207,7 +205,6 @@ net start mosquitto
 **macOS**
 
 ![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white)
-
 ```bash
 brew install mosquitto
 brew services start mosquitto
@@ -216,7 +213,6 @@ brew services start mosquitto
 **Linux**
 
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black)
-
 ```bash
 sudo apt update
 sudo apt install mosquitto mosquitto-clients
@@ -234,10 +230,13 @@ sudo systemctl enable mosquitto
 
 ⚠️ **Attention** : Ces brokers sont publics, n'envoyez pas de données sensibles !
 
-### Étape 2 : Code ESP32 avec MQTT
+### Étape 2 : Choix de la carte microcontrôleur
+
+#### Option A : ESP32
+
+![ESP32](https://img.shields.io/badge/ESP32-000000?style=flat-square&logo=espressif&logoColor=white)
 
 **Bibliothèques requises :**
-
 ```cpp
 #include <WiFi.h>          // Communication WiFi
 #include <PubSubClient.h>  // Client MQTT
@@ -245,7 +244,6 @@ sudo systemctl enable mosquitto
 ```
 
 **Code complet :**
-
 ```cpp
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -339,8 +337,238 @@ void loop() {
 }
 ```
 
----
+#### Option B : LOLIN(WEMOS) D1 R2 & mini
 
+![WEMOS](https://img.shields.io/badge/WEMOS-00979D?style=flat-square&logo=arduino&logoColor=white)
+
+**Bibliothèques requises :**
+```cpp
+#include <ESP8266WiFi.h>   // Communication WiFi pour ESP8266
+#include <PubSubClient.h>  // Client MQTT
+#include <DHT.h>           // Capteur DHT
+```
+
+**Code complet :**
+```cpp
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+#include <DHT.h>
+
+// Configuration WiFi
+const char* ssid = "VOTRE_SSID";
+const char* password = "VOTRE_MOT_DE_PASSE";
+
+// Configuration MQTT
+const char* mqtt_server = "192.168.1.100"; // IP de votre PC
+const int mqtt_port = 1883;
+const char* mqtt_topic_temp = "wemos/temperature";
+const char* mqtt_topic_hum = "wemos/humidite";
+const char* mqtt_topic_led = "wemos/led";
+
+// Configuration DHT
+#define DHTPIN D4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// Configuration LED
+#define LED_PIN D2
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void setup_wifi() {
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConnecté!");
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  String message = "";
+  for (int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  
+  if (String(topic) == mqtt_topic_led) {
+    if (message == "ON") {
+      digitalWrite(LED_PIN, HIGH);
+    } else {
+      digitalWrite(LED_PIN, LOW);
+    }
+  }
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    if (client.connect("WemosClient")) {
+      client.subscribe(mqtt_topic_led);
+    } else {
+      delay(5000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  dht.begin();
+  setup_wifi();
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(callback);
+}
+
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  
+  static unsigned long lastMsg = 0;
+  unsigned long now = millis();
+  if (now - lastMsg > 5000) {
+    lastMsg = now;
+    
+    float temp = dht.readTemperature();
+    float hum = dht.readHumidity();
+    
+    if (!isnan(temp) && !isnan(hum)) {
+      client.publish(mqtt_topic_temp, String(temp).c_str());
+      client.publish(mqtt_topic_hum, String(hum).c_str());
+      Serial.println("Données envoyées!");
+    }
+  }
+}
+```
+
+### Étape 3 : Installation et configuration de Node-RED
+
+#### Installation de Node-RED
+
+**Windows**
+
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows&logoColor=white)
+```cmd
+npm install -g --unsafe-perm node-red
+```
+
+**macOS / Linux**
+
+![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black)
+```bash
+sudo npm install -g --unsafe-perm node-red
+```
+
+#### Démarrage de Node-RED
+```bash
+node-red
+```
+
+Ouvrez votre navigateur et accédez à : `http://localhost:1880`
+
+#### Installation du dashboard
+
+Dans Node-RED, cliquez sur le menu (☰) → Manage palette → Install, puis recherchez et installez :
+```
+node-red-dashboard
+```
+
+### Étape 4 : Configuration du flux Node-RED
+
+#### Création du flux MQTT
+
+1. Glissez les nœuds suivants depuis la palette vers le workspace :
+   - 2x `mqtt in` (pour température et humidité)
+   - 2x `gauge` (jauge d'affichage)
+   - 2x `chart` (graphique)
+   - 1x `switch` (interrupteur pour LED)
+   - 1x `mqtt out` (pour contrôler la LED)
+
+2. **Configuration du nœud MQTT In (Température)** :
+   - Double-cliquez sur le nœud `mqtt in`
+   - Server : Cliquez sur l'icône crayon pour ajouter un nouveau broker
+   - Server : `localhost` (ou IP de votre broker)
+   - Port : `1883`
+   - Topic : `esp32/temperature` (ou `wemos/temperature`)
+   - QoS : `0`
+   - Name : `Température`
+
+3. **Configuration du nœud MQTT In (Humidité)** :
+   - Server : Utilisez le même broker configuré précédemment
+   - Topic : `esp32/humidite` (ou `wemos/humidite`)
+   - Name : `Humidité`
+
+4. **Configuration du nœud Gauge (Température)** :
+   - Group : Créez un nouveau groupe `[Home] Capteurs`
+   - Label : `Température`
+   - Units : `°C`
+   - Range : min `0`, max `50`
+   - Sectors : `0-20-30-50`
+
+5. **Configuration du nœud Gauge (Humidité)** :
+   - Group : `[Home] Capteurs`
+   - Label : `Humidité`
+   - Units : `%`
+   - Range : min `0`, max `100`
+
+6. **Configuration du nœud Chart (Température)** :
+   - Group : `[Home] Capteurs`
+   - Label : `Historique Température`
+   - X-axis : dernières `1` heure
+   - Y-axis : min `0`, max `50`
+
+7. **Configuration du nœud Chart (Humidité)** :
+   - Group : `[Home] Capteurs`
+   - Label : `Historique Humidité`
+   - X-axis : dernières `1` heure
+   - Y-axis : min `0`, max `100`
+
+8. **Configuration du nœud Switch (LED)** :
+   - Group : Créez un nouveau groupe `[Home] Contrôle`
+   - Label : `LED`
+   - On Payload : `ON`
+   - Off Payload : `OFF`
+
+9. **Configuration du nœud MQTT Out (LED)** :
+   - Server : Même broker
+   - Topic : `esp32/led` (ou `wemos/led`)
+   - QoS : `0`
+   - Name : `Contrôle LED`
+
+#### Connexion des nœuds
+
+Connectez les nœuds dans cet ordre :
+```
+mqtt in (Température) → gauge (Température)
+                     → chart (Température)
+
+mqtt in (Humidité) → gauge (Humidité)
+                   → chart (Humidité)
+
+switch (LED) → mqtt out (LED)
+```
+
+#### Déploiement
+
+Cliquez sur le bouton rouge `Deploy` en haut à droite.
+
+### Étape 5 : Accès au Dashboard
+
+Accédez au dashboard via : `http://localhost:1880/ui`
+
+Vous devriez voir :
+- Une jauge de température en temps réel
+- Une jauge d'humidité en temps réel
+- Des graphiques historiques
+- Un interrupteur pour contrôler la LED
+
+### Vérification
+
+1. Ouvrez le moniteur série de l'Arduino IDE (115200 baud)
+2. Vérifiez la connexion WiFi et MQTT
+3. Observez l'envoi des données toutes les 5 secondes
+4. Testez l'interrupteur LED depuis le dashboard
 ## Manipulation 2 : HTTP avec Node-RED
 
 ![HTTP](https://img.shields.io/badge/HTTP-005571?style=for-the-badge&logo=http&logoColor=white)
