@@ -577,23 +577,25 @@ Vous devriez voir :
 ### Objectif
 Créer une API HTTP pour recevoir et envoyer des données à l'ESP32.
 
-### Code ESP32 avec HTTP
+### Étape 1 : Choix de la carte microcontrôleur
+
+#### Option A : ESP32
+
+![ESP32](https://img.shields.io/badge/ESP32-000000?style=flat-square&logo=espressif&logoColor=white)
 
 **Bibliothèques requises :**
-
 ```cpp
-#include <WiFi.h>          // Communication WiFi
-#include <HTTPClient.h>    // Client HTTP
-#include <DHT.h>           // Capteur DHT
-#include <ArduinoJson.h>   // Manipulation JSON (optionnel)
+#include           // Communication WiFi
+#include     // Client HTTP
+#include            // Capteur DHT
+#include    // Manipulation JSON (optionnel)
 ```
 
 **Code complet :**
-
 ```cpp
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <DHT.h>
+#include 
+#include 
+#include 
 
 const char* ssid = "VOTRE_SSID";
 const char* password = "VOTRE_MOT_DE_PASSE";
@@ -608,10 +610,13 @@ DHT dht(DHTPIN, DHTTYPE);
 void setup() {
   Serial.begin(115200);
   dht.begin();
+  
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
+    Serial.print(".");
   }
+  Serial.println("\nConnecté!");
 }
 
 void loop() {
@@ -632,7 +637,9 @@ void loop() {
       
       if (httpCode > 0) {
         String response = http.getString();
-        Serial.println(response);
+        Serial.println("Réponse: " + response);
+      } else {
+        Serial.println("Erreur HTTP");
       }
       
       http.end();
@@ -643,7 +650,341 @@ void loop() {
 }
 ```
 
----
+#### Option B : LOLIN(WEMOS) D1 R2 & mini
+
+![WEMOS](https://img.shields.io/badge/WEMOS-00979D?style=flat-square&logo=arduino&logoColor=white)
+
+**Bibliothèques requises :**
+```cpp
+#include        // Communication WiFi pour ESP8266
+#include  // Client HTTP pour ESP8266
+#include         // Client WiFi
+#include                // Capteur DHT
+#include        // Manipulation JSON (optionnel)
+```
+
+**Code complet :**
+```cpp
+#include 
+#include 
+#include 
+#include 
+
+const char* ssid = "VOTRE_SSID";
+const char* password = "VOTRE_MOT_DE_PASSE";
+
+// URL de votre Node-RED
+const char* serverURL = "http://192.168.1.100:1880/data";
+
+#define DHTPIN D4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+WiFiClient wifiClient;
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+  
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConnecté!");
+}
+
+void loop() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    
+    float temp = dht.readTemperature();
+    float hum = dht.readHumidity();
+    
+    if (!isnan(temp) && !isnan(hum)) {
+      String jsonData = "{\"temperature\":" + String(temp) + 
+                       ",\"humidite\":" + String(hum) + "}";
+      
+      http.begin(wifiClient, serverURL);
+      http.addHeader("Content-Type", "application/json");
+      
+      int httpCode = http.POST(jsonData);
+      
+      if (httpCode > 0) {
+        String response = http.getString();
+        Serial.println("Réponse: " + response);
+      } else {
+        Serial.println("Erreur HTTP");
+      }
+      
+      http.end();
+    }
+  }
+  
+  delay(5000);
+}
+```
+
+### Étape 2 : Configuration de Node-RED pour HTTP
+
+#### Installation de Node-RED
+
+Si vous n'avez pas encore installé Node-RED, suivez ces étapes :
+
+**Windows**
+
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows&logoColor=white)
+```cmd
+npm install -g --unsafe-perm node-red
+```
+
+**macOS / Linux**
+
+![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black)
+```bash
+sudo npm install -g --unsafe-perm node-red
+```
+
+#### Démarrage de Node-RED
+```bash
+node-red
+```
+
+Ouvrez votre navigateur et accédez à : `http://localhost:1880`
+
+#### Installation du dashboard
+
+Dans Node-RED, cliquez sur le menu (☰) → Manage palette → Install, puis recherchez et installez :
+```
+node-red-dashboard
+```
+
+### Étape 3 : Création du flux Node-RED HTTP
+
+#### Configuration de l'API de réception
+
+1. Glissez les nœuds suivants depuis la palette vers le workspace :
+   - 1x `http in` (pour recevoir les données)
+   - 1x `json` (pour parser le JSON)
+   - 1x `function` (pour séparer température et humidité)
+   - 2x `gauge` (jauge d'affichage)
+   - 2x `chart` (graphique)
+   - 1x `http response` (pour répondre à l'ESP32)
+   - 1x `debug` (pour afficher les données reçues)
+
+2. **Configuration du nœud HTTP In** :
+   - Double-cliquez sur le nœud `http in`
+   - Method : `POST`
+   - URL : `/data`
+   - Name : `Réception données`
+
+3. **Configuration du nœud JSON** :
+   - Action : `Convert between JSON String & Object`
+   - Name : `Parser JSON`
+
+4. **Configuration du nœud Function** :
+   - Name : `Extraire données`
+   - Code :
+```javascript
+   // Extraire température et humidité
+   var temp = msg.payload.temperature;
+   var hum = msg.payload.humidite;
+   
+   // Créer deux messages de sortie
+   var msg1 = {payload: temp, topic: "temperature"};
+   var msg2 = {payload: hum, topic: "humidite"};
+   
+   return [msg1, msg2];
+```
+   - Outputs : `2`
+
+5. **Configuration du nœud Gauge (Température)** :
+   - Group : Créez un nouveau groupe `[Home] Capteurs HTTP`
+   - Label : `Température`
+   - Units : `°C`
+   - Range : min `0`, max `50`
+   - Sectors : `0-20-30-50`
+
+6. **Configuration du nœud Gauge (Humidité)** :
+   - Group : `[Home] Capteurs HTTP`
+   - Label : `Humidité`
+   - Units : `%`
+   - Range : min `0`, max `100`
+
+7. **Configuration du nœud Chart (Température)** :
+   - Group : `[Home] Capteurs HTTP`
+   - Label : `Historique Température`
+   - X-axis : dernières `1` heure
+   - Y-axis : min `0`, max `50`
+
+8. **Configuration du nœud Chart (Humidité)** :
+   - Group : `[Home] Capteurs HTTP`
+   - Label : `Historique Humidité`
+   - X-axis : dernières `1` heure
+   - Y-axis : min `0`, max `100`
+
+9. **Configuration du nœud HTTP Response** :
+   - Status code : `200`
+   - Name : `Réponse OK`
+
+10. **Configuration du nœud Debug** :
+    - Output : `complete msg object`
+    - Name : `Afficher données`
+
+#### Connexion des nœuds
+
+Connectez les nœuds dans cet ordre :
+```
+http in → json → function → [sortie 1] → gauge (Température)
+                          |            → chart (Température)
+                          |
+                          → [sortie 2] → gauge (Humidité)
+                                      → chart (Humidité)
+
+http in → json → debug
+              → http response
+```
+
+#### Configuration API de contrôle LED (Optionnel)
+
+Pour contrôler une LED depuis Node-RED :
+
+1. Ajoutez ces nœuds :
+   - 1x `switch` (interrupteur dashboard)
+   - 1x `function` (pour créer l'URL)
+   - 1x `http request` (pour envoyer la commande)
+
+2. **Configuration du nœud Switch** :
+   - Group : `[Home] Contrôle HTTP`
+   - Label : `LED`
+   - On Payload : `1`
+   - Off Payload : `0`
+
+3. **Configuration du nœud Function** :
+   - Name : `Créer URL LED`
+   - Code :
+```javascript
+   msg.url = "http://192.168.1.X/led?state=" + msg.payload;
+   return msg;
+```
+
+4. **Configuration du nœud HTTP Request** :
+   - Method : `GET`
+   - Return : `a UTF-8 string`
+   - Name : `Envoyer commande`
+
+5. Connectez : `switch → function → http request`
+
+#### Code ESP32/WEMOS pour le serveur LED (Optionnel)
+
+**ESP32 :**
+```cpp
+#include 
+#include 
+
+WebServer server(80);
+#define LED_PIN 2
+
+void handleLED() {
+  String state = server.arg("state");
+  if (state == "1") {
+    digitalWrite(LED_PIN, HIGH);
+  } else {
+    digitalWrite(LED_PIN, LOW);
+  }
+  server.send(200, "text/plain", "OK");
+}
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  
+  server.on("/led", handleLED);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+}
+```
+
+**WEMOS :**
+```cpp
+#include 
+#include 
+
+ESP8266WebServer server(80);
+#define LED_PIN D2
+
+void handleLED() {
+  String state = server.arg("state");
+  if (state == "1") {
+    digitalWrite(LED_PIN, HIGH);
+  } else {
+    digitalWrite(LED_PIN, LOW);
+  }
+  server.send(200, "text/plain", "OK");
+}
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  
+  server.on("/led", handleLED);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+}
+```
+
+#### Déploiement
+
+Cliquez sur le bouton rouge `Deploy` en haut à droite.
+
+### Étape 4 : Trouver l'adresse IP de votre PC
+
+Pour que l'ESP32/WEMOS puisse envoyer des données à Node-RED, vous devez utiliser l'adresse IP de votre PC.
+
+**Windows**
+```cmd
+ipconfig
+```
+
+Cherchez `IPv4 Address` dans la section WiFi ou Ethernet.
+
+**macOS / Linux**
+```bash
+ifconfig
+```
+
+ou
+```bash
+ip addr show
+```
+
+Remplacez `192.168.1.100` dans le code par votre adresse IP réelle.
+
+### Étape 5 : Accès au Dashboard
+
+Accédez au dashboard via : `http://localhost:1880/ui`
+
+Vous devriez voir :
+- Une jauge de température en temps réel
+- Une jauge d'humidité en temps réel
+- Des graphiques historiques
+- Un interrupteur pour contrôler la LED (si configuré)
+
+### Vérification
+
+1. Ouvrez le moniteur série de l'Arduino IDE (115200 baud)
+2. Vérifiez la connexion WiFi
+3. Observez l'envoi des requêtes HTTP toutes les 5 secondes
+4. Vérifiez les réponses du serveur Node-RED
+5. Consultez l'onglet Debug dans Node-RED pour voir les données reçues
 
 ## Manipulation 3 : Intégration ThingSpeak
 
