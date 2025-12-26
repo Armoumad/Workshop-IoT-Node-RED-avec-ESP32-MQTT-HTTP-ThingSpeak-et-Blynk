@@ -991,18 +991,29 @@ Vous devriez voir :
 ![ThingSpeak](https://img.shields.io/badge/ThingSpeak-00629B?style=for-the-badge&logo=mathworks&logoColor=white)
 ![MATLAB](https://img.shields.io/badge/MATLAB-0076A8?style=for-the-badge&logo=mathworks&logoColor=white)
 
+### Objectif
+Envoyer des données de température et d'humidité vers la plateforme cloud ThingSpeak pour visualisation et analyse.
+
 ### Étape 1 : Créer un canal ThingSpeak
 
 1. Créez un compte sur [thingspeak.com](https://thingspeak.com/)
-2. Créez un nouveau canal avec 2 champs :
-   - Field 1 : Temperature
-   - Field 2 : Humidite
-3. Notez votre **Write API Key**
+2. Cliquez sur **New Channel**
+3. Configurez votre canal :
+   - Name : `ESP32 IoT Monitoring`
+   - Field 1 : `Temperature`
+   - Field 2 : `Humidite`
+4. Cochez **Make Public** (optionnel)
+5. Cliquez sur **Save Channel**
+6. Allez dans l'onglet **API Keys**
+7. Notez votre **Write API Key** (ex: `ABCD1234EFGH5678`)
 
-### Code ESP32 vers ThingSpeak
+### Étape 2 : Choix de la carte microcontrôleur
+
+#### Option A : ESP32
+
+![ESP32](https://img.shields.io/badge/ESP32-000000?style=flat-square&logo=espressif&logoColor=white)
 
 **Bibliothèques requises :**
-
 ```cpp
 #include <WiFi.h>          // Communication WiFi
 #include <HTTPClient.h>    // Client HTTP pour API ThingSpeak
@@ -1010,7 +1021,6 @@ Vous devriez voir :
 ```
 
 **Code complet :**
-
 ```cpp
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -1039,6 +1049,9 @@ void sendToThingSpeak(float temp, float hum) {
     
     if (httpCode > 0) {
       Serial.println("Données envoyées à ThingSpeak!");
+      Serial.println("Code HTTP: " + String(httpCode));
+    } else {
+      Serial.println("Erreur d'envoi");
     }
     
     http.end();
@@ -1048,10 +1061,14 @@ void sendToThingSpeak(float temp, float hum) {
 void setup() {
   Serial.begin(115200);
   dht.begin();
+  
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
+    Serial.print(".");
   }
+  Serial.println("\nConnecté au WiFi!");
+  Serial.println("IP: " + WiFi.localIP().toString());
 }
 
 void loop() {
@@ -1059,12 +1076,199 @@ void loop() {
   float hum = dht.readHumidity();
   
   if (!isnan(temp) && !isnan(hum)) {
+    Serial.println("Température: " + String(temp) + "°C");
+    Serial.println("Humidité: " + String(hum) + "%");
     sendToThingSpeak(temp, hum);
+  } else {
+    Serial.println("Erreur de lecture du capteur");
   }
   
   delay(20000); // ThingSpeak limite : 15 secondes minimum
 }
 ```
+
+#### Option B : LOLIN(WEMOS) D1 R2 & mini
+
+![WEMOS](https://img.shields.io/badge/WEMOS-00979D?style=flat-square&logo=arduino&logoColor=white)
+
+**Bibliothèques requises :**
+```cpp
+#include <ESP8266WiFi.h>       // Communication WiFi pour ESP8266
+#include <ESP8266HTTPClient.h> // Client HTTP pour ESP8266
+#include <WiFiClient.h>        // Client WiFi
+#include <DHT.h>               // Capteur DHT
+```
+
+**Code complet :**
+```cpp
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+#include <DHT.h>
+
+const char* ssid = "VOTRE_SSID";
+const char* password = "VOTRE_MOT_DE_PASSE";
+
+String apiKey = "VOTRE_WRITE_API_KEY";
+const char* server = "http://api.thingspeak.com/update";
+
+#define DHTPIN D4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+WiFiClient wifiClient;
+
+void sendToThingSpeak(float temp, float hum) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    
+    String url = String(server) + "?api_key=" + apiKey + 
+                 "&field1=" + String(temp) + 
+                 "&field2=" + String(hum);
+    
+    http.begin(wifiClient, url);
+    int httpCode = http.GET();
+    
+    if (httpCode > 0) {
+      Serial.println("Données envoyées à ThingSpeak!");
+      Serial.println("Code HTTP: " + String(httpCode));
+    } else {
+      Serial.println("Erreur d'envoi");
+    }
+    
+    http.end();
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+  
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConnecté au WiFi!");
+  Serial.println("IP: " + WiFi.localIP().toString());
+}
+
+void loop() {
+  float temp = dht.readTemperature();
+  float hum = dht.readHumidity();
+  
+  if (!isnan(temp) && !isnan(hum)) {
+    Serial.println("Température: " + String(temp) + "°C");
+    Serial.println("Humidité: " + String(hum) + "%");
+    sendToThingSpeak(temp, hum);
+  } else {
+    Serial.println("Erreur de lecture du capteur");
+  }
+  
+  delay(20000); // ThingSpeak limite : 15 secondes minimum
+}
+```
+
+### Étape 3 : Visualisation des données sur ThingSpeak
+
+1. Retournez sur votre canal ThingSpeak
+2. Cliquez sur l'onglet **Private View** ou **Public View**
+3. Vous verrez deux graphiques :
+   - Field 1 Chart : Température en temps réel
+   - Field 2 Chart : Humidité en temps réel
+
+### Étape 4 : Personnalisation des graphiques
+
+#### Modifier l'apparence des graphiques
+
+1. Cliquez sur l'icône **crayon** sur un graphique
+2. Configurez :
+   - Chart Type : Line, Bar, Column, etc.
+   - Y-Axis : Min/Max values
+   - Results : Nombre de points à afficher
+   - Timescale : Minutes, Hours, Days
+3. Cliquez sur **Save**
+
+#### Ajouter des widgets supplémentaires
+
+1. Cliquez sur **Add Widgets**
+2. Choisissez parmi :
+   - **Gauge** : Jauge circulaire
+   - **Numeric Display** : Affichage numérique
+   - **MATLAB Visualization** : Graphiques avancés
+   - **MATLAB Analysis** : Analyse de données
+
+### Étape 5 : Utilisation de MATLAB Analysis (Optionnel)
+
+ThingSpeak permet d'exécuter du code MATLAB pour analyser vos données.
+
+**Exemple : Calcul de la moyenne des 10 dernières mesures**
+
+1. Allez dans **Apps** → **MATLAB Analysis**
+2. Cliquez sur **New**
+3. Collez ce code :
+```matlab
+% Lire les 10 dernières valeurs de température
+data = thingSpeakRead(YOUR_CHANNEL_ID, 'Fields', 1, 'NumPoints', 10, 'ReadKey', 'YOUR_READ_KEY');
+
+% Calculer la moyenne
+avgTemp = mean(data);
+
+% Afficher le résultat
+display(['Température moyenne : ', num2str(avgTemp), '°C']);
+
+% Enregistrer dans un autre canal (optionnel)
+thingSpeakWrite(YOUR_OUTPUT_CHANNEL_ID, avgTemp, 'WriteKey', 'YOUR_WRITE_KEY');
+```
+
+### Étape 6 : Alertes et notifications
+
+#### Configuration d'une alerte ThingSpeak
+
+1. Allez dans **Apps** → **ThingHTTP**
+2. Cliquez sur **New ThingHTTP**
+3. Configurez :
+   - Name : `Alert Temperature`
+   - URL : URL de votre webhook (IFTTT, Zapier, etc.)
+   - Method : `POST`
+   - Body : `{"temperature": %%channel_1234_field_1%%}`
+
+4. Allez dans **Apps** → **React**
+5. Cliquez sur **New React**
+6. Configurez :
+   - Condition Type : `Numeric`
+   - Test Frequency : `On Data Insertion`
+   - Condition : `Field 1 is greater than 30`
+   - Action : Run ThingHTTP `Alert Temperature`
+
+### Étape 7 : Intégration avec Node-RED (Optionnel)
+
+Vous pouvez lire les données ThingSpeak dans Node-RED.
+
+#### Installation du nœud ThingSpeak
+```bash
+cd ~/.node-red
+npm install node-red-contrib-thingspeak42
+```
+
+#### Configuration dans Node-RED
+
+1. Glissez un nœud `thingspeak read` dans le workspace
+2. Configurez :
+   - Channel ID : Votre ID de canal
+   - Read API Key : Votre Read API Key
+   - Field : `1` (température) ou `2` (humidité)
+   - Interval : `60` secondes
+3. Connectez à un nœud `gauge` ou `chart`
+4. Deploy
+
+### Vérification
+
+1. Ouvrez le moniteur série de l'Arduino IDE (115200 baud)
+2. Vérifiez la connexion WiFi
+3. Observez l'envoi des données toutes les 20 secondes
+4. Consultez votre canal ThingSpeak pour voir les graphiques se mettre à jour
+5. Le code HTTP 200 indique un envoi réussi
 
 ---
 
@@ -1072,19 +1276,99 @@ void loop() {
 
 ![Blynk](https://img.shields.io/badge/Blynk-04C3FF?style=for-the-badge&logo=blynk&logoColor=white)
 
+### Objectif
+Créer une application mobile pour surveiller et contrôler l'ESP32 via Blynk IoT.
+
 ### Étape 1 : Configuration Blynk
 
-1. Téléchargez l'application **Blynk IoT** (iOS/Android)
-2. Créez un nouveau template avec :
-   - Datastream V0 : Temperature (Double, 0-50)
-   - Datastream V1 : Humidite (Double, 0-100)
-   - Datastream V2 : LED (Integer, 0-1)
-3. Notez votre **Template ID** et **Auth Token**
+#### Création du compte et du template
 
-### Code ESP32 avec Blynk
+1. Téléchargez l'application **Blynk IoT** (iOS/Android)
+2. Créez un compte sur [blynk.cloud](https://blynk.cloud/)
+3. Connectez-vous à la console web : [blynk.cloud/dashboard](https://blynk.cloud/dashboard)
+
+#### Création d'un Template
+
+1. Allez dans **Developer Zone** → **My Templates**
+2. Cliquez sur **+ New Template**
+3. Configurez :
+   - Name : `ESP32 IoT Monitor`
+   - Hardware : `ESP32`
+   - Connection Type : `WiFi`
+4. Cliquez sur **Done**
+
+#### Configuration des Datastreams
+
+1. Dans votre template, allez dans **Datastreams**
+2. Cliquez sur **+ New Datastream** → **Virtual Pin**
+3. Créez 3 datastreams :
+
+**Datastream V0 - Température**
+- Name : `Temperature`
+- PIN : `V0`
+- Data Type : `Double`
+- Min : `0`
+- Max : `50`
+- Default : `25`
+
+**Datastream V1 - Humidité**
+- Name : `Humidite`
+- PIN : `V1`
+- Data Type : `Double`
+- Min : `0`
+- Max : `100`
+- Default : `50`
+
+**Datastream V2 - LED**
+- Name : `LED`
+- PIN : `V2`
+- Data Type : `Integer`
+- Min : `0`
+- Max : `1`
+- Default : `0`
+
+4. Cliquez sur **Save** pour chaque datastream
+
+#### Configuration du Web Dashboard
+
+1. Allez dans **Web Dashboard**
+2. Glissez les widgets suivants :
+   - **Gauge** → Liez à `V0` (Température)
+   - **Gauge** → Liez à `V1` (Humidité)
+   - **Chart** → Ajoutez `V0` et `V1`
+   - **Switch** → Liez à `V2` (LED)
+3. Personnalisez les couleurs et labels
+4. Cliquez sur **Save**
+
+#### Configuration du Mobile Dashboard
+
+1. Dans l'application mobile Blynk
+2. Allez dans votre device
+3. Appuyez sur l'icône **clé à molette** (paramètres)
+4. Ajoutez les mêmes widgets que le Web Dashboard
+5. Sauvegardez
+
+#### Récupération des identifiants
+
+1. Allez dans **Search** → **Devices**
+2. Cliquez sur **+ New Device**
+3. Sélectionnez **From Template** → Votre template
+4. Donnez un nom : `Mon ESP32`
+5. Notez ces informations :
+   - **Template ID** : `TMPLxxxxxx`
+   - **Device Name** : `Mon ESP32`
+   - **Auth Token** : `abcdef1234567890`
+
+### Étape 2 : Choix de la carte microcontrôleur
+
+#### Option A : ESP32
+
+![ESP32](https://img.shields.io/badge/ESP32-000000?style=flat-square&logo=espressif&logoColor=white)
 
 **Bibliothèques requises :**
 
+Installation via Arduino IDE Library Manager :
+- `Blynk` by Volodymyr Shymanskyy
 ```cpp
 #include <WiFi.h>              // Communication WiFi
 #include <BlynkSimpleEsp32.h>  // Bibliothèque Blynk pour ESP32
@@ -1092,11 +1376,12 @@ void loop() {
 ```
 
 **Code complet :**
-
 ```cpp
 #define BLYNK_TEMPLATE_ID "VOTRE_TEMPLATE_ID"
-#define BLYNK_TEMPLATE_NAME "ESP32 IoT"
+#define BLYNK_TEMPLATE_NAME "ESP32 IoT Monitor"
 #define BLYNK_AUTH_TOKEN "VOTRE_AUTH_TOKEN"
+
+#define BLYNK_PRINT Serial
 
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
@@ -1113,11 +1398,14 @@ char pass[] = "VOTRE_MOT_DE_PASSE";
 DHT dht(DHTPIN, DHTTYPE);
 BlynkTimer timer;
 
+// Fonction appelée quand V2 change (Switch LED)
 BLYNK_WRITE(V2) {
   int ledState = param.asInt();
   digitalWrite(LED_PIN, ledState);
+  Serial.println("LED: " + String(ledState ? "ON" : "OFF"));
 }
 
+// Fonction pour envoyer les données des capteurs
 void sendSensorData() {
   float temp = dht.readTemperature();
   float hum = dht.readHumidity();
@@ -1125,6 +1413,11 @@ void sendSensorData() {
   if (!isnan(temp) && !isnan(hum)) {
     Blynk.virtualWrite(V0, temp);
     Blynk.virtualWrite(V1, hum);
+    
+    Serial.println("Température: " + String(temp) + "°C");
+    Serial.println("Humidité: " + String(hum) + "%");
+  } else {
+    Serial.println("Erreur de lecture du capteur");
   }
 }
 
@@ -1133,9 +1426,13 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   dht.begin();
   
+  Serial.println("Connexion à Blynk...");
   Blynk.begin(auth, ssid, pass);
   
+  // Envoyer les données toutes les 5 secondes
   timer.setInterval(5000L, sendSensorData);
+  
+  Serial.println("Système prêt!");
 }
 
 void loop() {
@@ -1143,6 +1440,136 @@ void loop() {
   timer.run();
 }
 ```
+
+#### Option B : LOLIN(WEMOS) D1 R2 & mini
+
+![WEMOS](https://img.shields.io/badge/WEMOS-00979D?style=flat-square&logo=arduino&logoColor=white)
+
+**Bibliothèques requises :**
+
+Installation via Arduino IDE Library Manager :
+- `Blynk` by Volodymyr Shymanskyy
+```cpp
+#include <ESP8266WiFi.h>       // Communication WiFi pour ESP8266
+#include <BlynkSimpleEsp8266.h>// Bibliothèque Blynk pour ESP8266
+#include <DHT.h>               // Capteur DHT
+```
+
+**Code complet :**
+```cpp
+#define BLYNK_TEMPLATE_ID "VOTRE_TEMPLATE_ID"
+#define BLYNK_TEMPLATE_NAME "WEMOS IoT Monitor"
+#define BLYNK_AUTH_TOKEN "VOTRE_AUTH_TOKEN"
+
+#define BLYNK_PRINT Serial
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <DHT.h>
+
+char auth[] = BLYNK_AUTH_TOKEN;
+char ssid[] = "VOTRE_SSID";
+char pass[] = "VOTRE_MOT_DE_PASSE";
+
+#define DHTPIN D4
+#define DHTTYPE DHT11
+#define LED_PIN D2
+
+DHT dht(DHTPIN, DHTTYPE);
+BlynkTimer timer;
+
+// Fonction appelée quand V2 change (Switch LED)
+BLYNK_WRITE(V2) {
+  int ledState = param.asInt();
+  digitalWrite(LED_PIN, ledState);
+  Serial.println("LED: " + String(ledState ? "ON" : "OFF"));
+}
+
+// Fonction pour envoyer les données des capteurs
+void sendSensorData() {
+  float temp = dht.readTemperature();
+  float hum = dht.readHumidity();
+  
+  if (!isnan(temp) && !isnan(hum)) {
+    Blynk.virtualWrite(V0, temp);
+    Blynk.virtualWrite(V1, hum);
+    
+    Serial.println("Température: " + String(temp) + "°C");
+    Serial.println("Humidité: " + String(hum) + "%");
+  } else {
+    Serial.println("Erreur de lecture du capteur");
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  dht.begin();
+  
+  Serial.println("Connexion à Blynk...");
+  Blynk.begin(auth, ssid, pass);
+  
+  // Envoyer les données toutes les 5 secondes
+  timer.setInterval(5000L, sendSensorData);
+  
+  Serial.println("Système prêt!");
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+}
+```
+
+### Étape 3 : Fonctionnalités avancées de Blynk
+
+#### Notifications Push
+
+Ajoutez ce code pour envoyer des notifications :
+```cpp
+void checkTemperature() {
+  float temp = dht.readTemperature();
+  
+  if (temp > 30) {
+    Blynk.logEvent("high_temp", String("Température élevée: ") + String(temp) + "°C");
+  }
+}
+```
+
+Configuration dans Blynk Console :
+1. Allez dans **Settings** → **Events**
+2. Créez un nouvel événement `high_temp`
+3. Message : `Alerte température!`
+
+#### Automatisations
+
+1. Dans Blynk Console, allez dans **Automations**
+2. Créez une nouvelle automation :
+   - Condition : `Temperature > 30`
+   - Action : `Turn ON LED` (V2 = 1)
+
+#### Historique des données
+
+Blynk stocke automatiquement toutes les données. Pour y accéder :
+1. Allez dans votre device
+2. Cliquez sur **Timeline**
+3. Sélectionnez la période à visualiser
+
+### Étape 4 : Utilisation de l'application mobile
+
+1. Ouvrez l'application Blynk
+2. Vous verrez votre device en ligne
+3. Visualisez les données en temps réel
+4. Contrôlez la LED avec le switch
+5. Consultez l'historique dans le graphique
+
+### Vérification
+
+1. Ouvrez le moniteur série de l'Arduino IDE (115200 baud)
+2. Vérifiez la connexion à Blynk
+3. Observez l'envoi des données toutes les 5 secondes
+4. Testez le contrôle de la LED depuis l'application
+5. Vérifiez les notifications si la température dépasse le seuil
 
 ---
 
@@ -1168,7 +1595,6 @@ void loop() {
 </div>
 
 **Architecture système :**
-
 ```
 ESP32 (WiFi + DHT + LED)
   │
@@ -1193,6 +1619,8 @@ ESP32 (WiFi + DHT + LED)
 | ESP32 WiFi échoue | Vérifier SSID 2.4GHz | ![WiFi](https://img.shields.io/badge/WiFi-0078D4?style=flat-square) |
 | MQTT non connecté | Tester avec `mosquitto_sub` | ![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt) |
 | HTTP timeout | Vérifier IP et firewall | ![Network](https://img.shields.io/badge/Network-005571?style=flat-square) |
+| ThingSpeak erreur 400 | Respecter délai 15 sec | ![ThingSpeak](https://img.shields.io/badge/ThingSpeak-00629B?style=flat-square) |
+| Blynk hors ligne | Vérifier Auth Token | ![Blynk](https://img.shields.io/badge/Blynk-04C3FF?style=flat-square) |
 
 ---
 
@@ -1207,6 +1635,19 @@ ESP32 (WiFi + DHT + LED)
 | ![](https://img.shields.io/badge/WiFi-0078D4?style=flat-square) | Connexion réseau | Incluse avec ESP32 |
 | ![](https://img.shields.io/badge/PubSubClient-660066?style=flat-square) | MQTT | Library Manager |
 | ![](https://img.shields.io/badge/HTTPClient-005571?style=flat-square) | Requêtes HTTP | Incluse avec ESP32 |
+| ![](https://img.shields.io/badge/DHT-green?style=flat-square) | Capteur DHT11/22 | Library Manager |
+| ![](https://img.shields.io/badge/ArduinoJson-000000?style=flat-square) | JSON | Library Manager |
+| ![](https://img.shields.io/badge/Blynk-04C3FF?style=flat-square) | Blynk IoT | Library Manager |
+
+### Pour WEMOS D1 (Arduino IDE)
+
+![Arduino](https://img.shields.io/badge/Arduino_Libraries-00979D?style=for-the-badge&logo=arduino&logoColor=white)
+
+| Bibliothèque | Utilisation | Installation |
+|--------------|-------------|--------------|
+| ![](https://img.shields.io/badge/ESP8266WiFi-0078D4?style=flat-square) | Connexion réseau | Incluse avec ESP8266 |
+| ![](https://img.shields.io/badge/PubSubClient-660066?style=flat-square) | MQTT | Library Manager |
+| ![](https://img.shields.io/badge/ESP8266HTTPClient-005571?style=flat-square) | Requêtes HTTP | Incluse avec ESP8266 |
 | ![](https://img.shields.io/badge/DHT-green?style=flat-square) | Capteur DHT11/22 | Library Manager |
 | ![](https://img.shields.io/badge/ArduinoJson-000000?style=flat-square) | JSON | Library Manager |
 | ![](https://img.shields.io/badge/Blynk-04C3FF?style=flat-square) | Blynk IoT | Library Manager |
@@ -1236,7 +1677,6 @@ ESP32 (WiFi + DHT + LED)
 </div>
 
 ---
-
 
 <div align="center">
 
